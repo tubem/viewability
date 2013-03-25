@@ -21,21 +21,26 @@ import flash.system.Security;
 import flash.utils.setTimeout;
 
 public class ViewabilityAsset extends MovieClip {
-	private const version:Number = 6;
+	private const version:Number = 8;
 	private var gateway:*;  //Proprietary; Communicates with ad unit
 	private var psId:String; //Proprietary; Site ID
 	private var logger:Logger;
 	private var viewabilityCheck:ViewabilityCheck;
+	private var quartilesReported:Array = new Array( false, false, false, false, false );
+	private var isMuted:Boolean;
+	private var wiggleRoom:Number = 0;
 	public function ViewabilityAsset() {
 		Security.allowDomain("*");
 		//Example logger:
 		logger = new Logger();
 	}
 
-	private function startSniffing():void {
+	private function startSniffing( checkpoint:String ):void {
 		if ( ExternalInterface.available ) {
-			logger.sendEvent('{"version":"' + version + '","siteId":"' + psId +
-					'","action":"Progress"}' );
+			if ( checkpoint == 'view' ) {
+				logger.sendEvent('{"version":"' + version + '","siteId":"' + psId +
+						'","action":"Progress"}' );
+			}
 			viewabilityCheck = new ViewabilityCheck( 'fn' + gateway.videoId );
 			var results:Object = viewabilityCheck.results;
 			if ( !!results.error ) {
@@ -57,7 +62,8 @@ public class ViewabilityAsset extends MovieClip {
 						results.id + '","width":{"adWidth":"' + gateway.adWidth +
 						'","objWidth":"' + ( results.objRight - results.objLeft ) + '"},"height":{"adHeight":"' +
 						gateway.adHeight + '","objHeight":"' + ( results.objBottom - results.objTop ) +
-						'"},"windowActive":"' + results.focus + '"}';
+						'"},"windowActive":"' + results.focus + '","checkpoint":"' + checkpoint + '","mute":"' +
+						isMuted + '"}';
 				logger.sendEvent( jsonString );
 
 				ExternalInterface.call( 'TMViewableDetect', jsonString );//For demo page
@@ -102,7 +108,8 @@ public class ViewabilityAsset extends MovieClip {
 	}
 	//TM proprietary; Called when asset is added to stage
 	public function startAsset():void {
-		setTimeout( startSniffing, 1000 );
+		//setTimeout( startSniffing, 1000, 'view' );
+		gateway.addEventListener( InteractiveAssetGateway.IA_PLAYHEAD_CHANGED, handlePlayheadUpdate );
 	}
 	//TM proprietary; Required by TM ad unit
 	public function pauseAsset():void {
@@ -112,6 +119,41 @@ public class ViewabilityAsset extends MovieClip {
 	}
 	//TM proprietary; Required by TM ad unit
 	public function stopAsset():void {
+		gateway.removeEventListener( InteractiveAssetGateway.IA_PLAYHEAD_CHANGED, handlePlayheadUpdate );
+	}
+	//----------------------------
+	/**
+	* handlePlayheadUpdate() is triggered every ~200ms to allow stats data to be reported at each quartile.
+	*
+	* (It needs to access the current playhead position, the duration, and the current volume.)
+	*
+	*/
+	public function handlePlayheadUpdate( e:Event ):void {
+		var currentPos:Number = gateway.playheadPos;
+		var duration:Number = gateway.duration;
+		isMuted = ( gateway.volume <= 0 );
+		var quartilesCompleted:Number = Math.floor( ( ( currentPos + wiggleRoom ) / duration ) / .25 );
+		if ( quartilesReported[ quartilesCompleted ] == false ) {
+			switch ( quartilesCompleted ) {
+				case 0:
+					startSniffing( 'view' );
+					setTimeout( startSniffing, 1000, 'oneSecond' );
+					break;
+				case 1:
+					startSniffing( 'pct25' );
+					break;
+				case 2:
+					startSniffing( 'pct50' );
+					break;
+				case 3:
+					startSniffing( 'pct75' );
+					wiggleRoom = 1;
+					break;
+				case 4:
+					startSniffing( 'pct100' );
+			}
+			quartilesReported[ quartilesCompleted ] = true;
+		}
 	}
 }
 }
