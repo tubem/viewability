@@ -110,7 +110,9 @@ public class ViewabilityCheck {
 									results[ 'percentViewable' ] = Math.round( visibleObjectArea / totalObjectArea * 100 );
 								}
 								//Report window focus (Is the window active?):
-								results[ 'focus' ] = window.document.hasFocus();
+								var chromeNotVisible = 	!!document.webkitVisibilityState &&
+														document.webkitVisibilityState != 'visible';
+								results[ 'focus' ] = window.document.hasFocus() && !chromeNotVisible;
 							}
 						}
 					} else {
