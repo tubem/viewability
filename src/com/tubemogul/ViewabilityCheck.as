@@ -18,8 +18,10 @@ package com.tubemogul {
 import flash.external.ExternalInterface;
 
 public class ViewabilityCheck {
-	public var results:Object;
+	public var results:Object={};
+	public var _uniqueId:String;
 	public function ViewabilityCheck( uniqueId:String ) {
+		_uniqueId=uniqueId;
 		ExternalInterface.addCallback( uniqueId, flashProbe );
 		results = checkViewability( uniqueId );
 	}
@@ -27,23 +29,40 @@ public class ViewabilityCheck {
 	public function flashProbe( someData:* ):void {
 		return;
 	}
-	public function checkViewability( uniqueId:String ):Object {
+
+
+	public function checkViewability( uniqueId:String = null):Object {
+		if ( uniqueId === null ) uniqueId=_uniqueId;
 		var js:XML = <script><![CDATA[
 				function a( obfuFn ) {
-					var results = {};
-					if ( window.self === window.top ) { //Check for iFrames
-						//Find Object by looking for obfuFn (Obfuscated Function set by Flash)
-						var myObj = null;
-						var objs = document.getElementsByTagName("object");
-						for (var i = 0; i < objs.length; i++) {
-							if ( !!objs[i][ obfuFn ] ) {
-								myObj = objs[i];
-							}
+					var results = {'errCode':'e0'};
+
+					var myObj = null;
+					var objRect = null;
+
+					var xMin = 0;
+					var xMax = 0;
+					var yMin = 0;
+					var yMax = 0;
+					var totalObjectArea = 0;
+
+					//Find Object by looking for obfuFn (Obfuscated Function set by Flash)
+					var objs = document.getElementsByTagName("object");
+					for (var i = 0; i < objs.length; i++) {
+						if ( !!objs[i][ obfuFn ] ) {
+							myObj = objs[i];
+							var rects = myObj.getClientRects();
+							objRect = rects[0];
+
+							totalObjectArea = ( objRect.right - objRect.left ) * ( objRect.bottom - objRect.top );
 						}
-						if ( myObj == null ) {
+					}
+
+					if ( myObj == null ) {
 							//report object not found
-							results = { "error": "Object not found" };
-						} else {
+							results["error"]  = "Object not found";
+							results["errCode"] = "eOB";
+					} else {
 							//Capture the player id for reporting (not necessary to check viewability):
 							results[ 'id' ] = myObj.id;
 							//Avoid including scrollbars in viewport size by taking the smallest dimensions (also
@@ -68,7 +87,7 @@ public class ViewabilityCheck {
 							}
 							//.height
 							if ( !!document.documentElement && !!document.documentElement.clientHeight &&
-								!isNaN( document.documentElement.clientHeight ) ) {
+				 				!isNaN( document.documentElement.clientHeight ) ) {
 								results[ 'clientHeight' ] = Math.min ( results[ 'clientHeight' ],
 									document.documentElement.clientHeight );
 							}
@@ -85,11 +104,10 @@ public class ViewabilityCheck {
 									window.innerHeight );
 							}
 							if ( results[ 'clientHeight' ] == Infinity || results[ 'clientWidth' ] == Infinity ) {
-								results = { "error": "Failed to determine viewport" };
+								results["error"] = "Failed to determine viewport";
+								results["errCode"] = "eWH" ;
 							} else {
 								//Get player dimensions:
-								var rects = myObj.getClientRects();
-								objRect = rects[0];
 								results[ 'objTop' ] = objRect.top;
 								results[ 'objBottom' ] = objRect.bottom;
 								results[ 'objLeft' ] = objRect.left;
@@ -100,12 +118,10 @@ public class ViewabilityCheck {
 									//Entire object is out of viewport
 									results[ 'percentViewable' ] = 0;
 								} else {
-									var totalObjectArea = ( objRect.right - objRect.left ) *
-										( objRect.bottom - objRect.top );
-									var xMin = Math.ceil( Math.max( 0, objRect.left ) );
-									var xMax = Math.floor( Math.min( results.clientWidth, objRect.right ) );
-									var yMin = Math.ceil( Math.max( 0, objRect.top ) );
-									var yMax = Math.floor( Math.min( results.clientHeight, objRect.bottom ) );
+									xMin = Math.ceil( Math.max( 0, objRect.left ) );
+									xMax = Math.floor( Math.min( results.clientWidth, objRect.right ) );
+									yMin = Math.ceil( Math.max( 0, objRect.top ) );
+									yMax = Math.floor( Math.min( results.clientHeight, objRect.bottom ) );
 									var visibleObjectArea = ( xMax - xMin + 1 ) * ( yMax - yMin + 1 );
 									results[ 'percentViewable' ] = Math.round( visibleObjectArea / totalObjectArea * 100 );
 								}
@@ -114,10 +130,50 @@ public class ViewabilityCheck {
 														document.webkitVisibilityState != 'visible';
 								results[ 'focus' ] = window.document.hasFocus() && !chromeNotVisible;
 							}
-						}
-					} else {
-						results = { "error": "Ad in iFrame" };
 					}
+
+					if ( results["errCode"] == 'e0' &&  window.self !== window.top ) { //Check for iFrames
+							results["error"] =  "Ad in iFrame";
+							results["errCode"] = "eIF";
+							
+							//can find viewability in iFRame if Firefox
+							if (results[ 'percentViewable' ] > 0 && window.self.mozInnerScreenX !== undefined) {
+								results[ 'mozViewable' ] = results[ 'percentViewable' ];
+								var w = window.self;
+								while( w.self != w.top ) {
+									var dX = w.mozInnerScreenX - w.parent.mozInnerScreenX;
+									var dY = w.mozInnerScreenY - w.parent.mozInnerScreenY;
+									w = w.parent;
+
+									xMin +=dX; xMin = Math.ceil( Math.max( 0, xMin ) );
+									xMax +=dX; xMax = Math.floor( Math.min( w.innerWidth, xMax ) );
+									yMin +=dY; yMin = Math.ceil( Math.max( 0, yMin ) );
+									yMax +=dY; yMax = Math.floor( Math.min( w.innerHeight, yMax ) );
+									if (xMin>=xMax || yMin>=yMax) {
+										results[ 'mozViewable' ] = 0; break;
+									}
+								}
+								if (results[ 'mozViewable' ] > 0) {
+									 results[ 'mozViewable' ] = Math.round( ( xMax - xMin  ) * ( yMax - yMin  ) / totalObjectArea * 100 );
+								}
+ 							}
+					}
+
+
+						
+				
+					if (myObj) {	//Check if overlaps with other elements
+						var ii = 0;	
+						for(var ix = 0.25; ix < 1; ix +=0.3) {
+							for(var iy = 0.25; iy < 1; iy +=0.3) {
+								ii+=(document.elementFromPoint(objRect.left + (objRect.right - objRect.left) * ix,
+								objRect.top + (objRect.bottom-objRect.top) * iy) == myObj) ? 1 : 0;
+							}
+						}
+						results['ovlViewable'] = Math.round( ii* 100/9 );
+
+					}
+
 					return results;
 				}
 			]]></script>;
