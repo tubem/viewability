@@ -63,14 +63,12 @@ public class ViewabilityCheck {
 							//.width
 							if ( !!document.documentElement && !!document.documentElement.clientWidth &&
 								!isNaN( document.documentElement.clientWidth ) ) {
-								results[ 'clientWidth' ] = Math.min ( results[ 'clientWidth' ],
-									document.documentElement.clientWidth );
+								results[ 'clientWidth' ] = document.documentElement.clientWidth;
 							}
 							//.height
 							if ( !!document.documentElement && !!document.documentElement.clientHeight &&
 								!isNaN( document.documentElement.clientHeight ) ) {
-								results[ 'clientHeight' ] = Math.min ( results[ 'clientHeight' ],
-									document.documentElement.clientHeight );
+								results[ 'clientHeight' ] = document.documentElement.clientHeight;
 							}
 							//window.innerWidth/Height - Handling case where viewport is represented by window.innerH/W
 							//.innerWidth
